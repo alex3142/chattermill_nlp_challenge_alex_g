@@ -91,14 +91,21 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 included files/folders
 
 Folder - Data - holds raw data and python data objects
+
 Folder - Data_Featurised - holds python data object which are readyfor input into the network
+
 Folder - Feature_Models - hold models used to create features (needed to featurise more data)
+
 Folder - ML_Models - holds the trained neural network models
+
 Folder - Slurm - holds slurm scripts to run models
 
 src - contains the following source code:
+
 Data_Import_And_Feature.py - functions for import and featurisation of data
+
 Text_Classifier_Neural_Network.py - contains functions to run neural network
+
 NLP_Challenge_Main.py - runs the software
 
 

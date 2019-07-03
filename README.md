@@ -8,6 +8,13 @@ IMDB movie reviews.
 
 Notes
 
+GitHub did not upload that data files, in order to use the files:
+negative_reviews.txt, 
+positive_reviews.txt, 
+unsupervised_reviews.txt 
+need to be placed in the 'Data' folder
+
+
 There is a potential issue with small batch sizes (the final batch whichis the remainder batch)
 in the test set validation function. it doesn't affect the given batch size but it may in the future.
 
@@ -32,18 +39,29 @@ requirements
 
 the following python libraries are required
 torch 1.0.1
+
 os
+
 numpy 
+
 pickle
+
 sklearn
+
 nltk
+
 datetime 
+
 gensim
+
 math 
+
 pandas as pd
 
 in addition the following nltk data maybe required:
+
 punkt
+
 stopwords 
 
 

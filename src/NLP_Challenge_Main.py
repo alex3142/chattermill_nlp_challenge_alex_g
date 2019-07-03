@@ -1,455 +1,93 @@
 # -*- coding: utf-8 -*-
 """
-Text_Classifier_Neural_Net.py
+Alex Gilbert's code for the Chattermill NLP Challenge
 
-This (hopefully) is a binary sentiment analysis classifier
+https://github.com/chattermill/nlp-challenge
 
-Borrowed some ideas from here
-https://gsarantitis.wordpress.com/2018/06/10/pytorch-for-natural-language-processing-a-sentiment-analysis-example/
+NLP_Challenge_Main.py
 
+06/2019
 
-Can put gensim directly into pytorch
-https://stackoverflow.com/questions/49710537/pytorch-gensim-how-to-load-pre-trained-word-embeddings
+Alexgilbert3142@gmail.com
 
 """
-import torch
+
+#################################################
+##########      ideas/observations     ##########
+#################################################
+
+# both stemmers with this wordList = ["can", "can't", "cannot", "eat", "eating"]
+# produce "can can't cannot eat eat"
+# ideally I'd want cannot and can't to be mapped to the same stem...
+
+# there is a lot of slag e.g.
+# aahhhhhh
+# aaagagghhhh
+# agh
+
+# these should probably be mapped to the same stem
+# maybe there is an internet slag stemmer out there somewhere...
+
+#punctuation has been removed don't = don t, this may have some interseting side effects...
 
 
-import torch.nn as nn
-import torch.nn.functional as F
+# might be useful 
+#https://medium.com/@GeneAshis/nlp-sentiment-analysis-on-imdb-movie-dataset-fb0c4d346d23
 
-import os
+# accirding to the above all approaches get 90%+ accuracy
 
-import torch.optim as optim
+
+#gensim link
+#https://radimrehurek.com/gensim/models/doc2vec.html
+
+
 
 import numpy as np
+import pandas as pd
 import pickle
+import os
+
+
+
+
+import Text_Classifier_Neural_Network
+import Data_Import_And_Feature
+
+# surpress error when using lamdba function on the 
+# dataframes, I had a look and the data appears to be find
+# gven more time I'd investigate further
+pd.options.mode.chained_assignment = None  # default='warn'
+
 
 from sklearn.model_selection import KFold
 
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 
-dataDirectory = "../Data_Featurised/"
-modelWeightsDirectory = "../ML_Models/"
-
-
-class Net(nn.Module):
-    # some useful info up in here:
-    #https://medium.com/deeplearningbrasilia/deep-learning-introduction-to-pytorch-5bd39421c84
-    def __init__(self, inputSize):
-        
-        # you need to initialise the parent class first
-        # because dem's the rules
-        super(Net, self).__init__()
-        
-        
-        #853
-        self.fc1 = nn.Linear(inputSize, 1000)
-        
-        self.fc2 = nn.Linear(1000, 600)
-        
-        self.fc3 = nn.Linear(600, 400)
-        
-        self.fc4 = nn.Linear(400, 100)
-        
-        self.fc5 = nn.Linear(100, 1)
-        
-        
-
-        #self.dropout = nn.Dropout(0.5)
-
-    def forward(self, x):
-        # here is where we define HOW the previously declared
-#        # layers are going to be connected
-#        h = F.leaky_relu(self.fc1(x))
-#        h = F.leaky_relu(self.fc2(h))
-#        h = F.leaky_relu(self.fc3(h))
-        
-        #sig = nn.Sigmoid()
-        
-        h = F.leaky_relu(self.fc1(x))
-        h = F.leaky_relu(self.fc2(h))
-        h = F.leaky_relu(self.fc3(h))
-        h = F.leaky_relu(self.fc4(h))
-        
-        h = self.fc5(h)
-        
-        #when using BCEWithLogitsLoss you DO NOT NEED a sigmoid at the end
-        # h = torch.sigmoid(h)
-
-        return h
-    
-
-
-
-
-            
-    
-def SetNetParams(thisNet):
-    ###########################################
-    ##### Define loss fn and optimiser ########
-    ###########################################
-    
-    
-         
-    # NOTE - when using this DO NOT SIGMOID THE OUTPUT!!!!
-    # its built-in to this function and you will get totally
-    # meaningless outputs if you add one yourself, not so much deep learning 
-    # as deep nonesense, and it will be entirely your fault.
-    criterionTraining = nn.BCEWithLogitsLoss()
-     
-#    # loss tracking criterion
-#    criterionTracking = nn.BCEWithLogitsLoss(reduction = 'none')
-#     
-    #optimizer = optim.Adam(thisNet.parameters(), lr=0.0001)
-    
-    optimizer = optim.SGD(thisNet.parameters(), lr=0.0003, momentum = 0.9)
-     
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode = 'min', patience = 5, verbose = True)
-        
-    return criterionTraining, optimizer, scheduler
-        
-            
-def Train(net, featureType, trainSet, trainLabels, criterionTraining, optimizer, batchSize, device, verbose = True):
-    
-    ############################################
-    ######### Training the Network #############
-    ############################################
-    
-    if verbose:
-        print("Train running...")
-    #model_directory_path = 'C:\\Git in C\\Thesis Parent\\thesis\\Training\\CIFAR-10 Classifier Using CNN in PyTorch\\model\\'
-    
-        
-    # this shuffles the data, this is done manually to more easily
-    # keep track of the loss of data items
-    
-    # get a list of randomly permuted indexes of the training set
-    trainsetPermutationIdxs = np.random.permutation(np.arange(trainSet.shape[0]))
-    
-    
-    for batchStartIdx, batchIdx  in enumerate(range(0, trainSet.shape[0], batchSize)):
-        
-                    
-        #https://pytorch.org/docs/stable/autograd.html#locally-disable-grad
-        # because later in the loop i turn off grad to calculate 
-        # the individual loss i need to make sure it is turned back on here
-        torch.enable_grad()
-
-        batchIdxs = trainsetPermutationIdxs[batchStartIdx : batchStartIdx + batchSize]
-        
-        thisBatch = []
-        thisBatchCosine = []
-        
-        for thisIndex in batchIdxs:
-            thisBatch.append(torch.from_numpy(trainSet[thisIndex]))
-            thisBatchCosine.append(trainSet[thisIndex])
-        
-        #print("thisBatch[0].shape = ", thisBatch[0].shape)
-        
-        
-        
-        
-        thisBatchStack = torch.stack(thisBatch)
-        
-        #print("thisBatchStack.shape = ", thisBatchStack.shape)
-        
-        thisLabels = torch.Tensor([trainLabels[thisIndex] for thisIndex in batchIdxs.tolist()])
-        
-        inputs, labels = thisBatchStack.to(device), thisLabels.to(device)
-        
-        # note, here we cannot rely on the batch size because maybe
-        # the data set is not divisible by the batch size, then when the
-        # last batch is run there will be issues, making it depend on the 
-        # size of the current input is a much better solution
-        labels = labels.view(thisBatchStack.shape[0],1)
-        
-        if featureType == "tfidf":
-        #tfidf comes out in a weird shape.... no se por que
-            inputs = inputs.view(thisBatchStack.shape[0],thisBatchStack.shape[2])
-        
-        #########################################################
-        #################### do batch update ####################
-        #########################################################
-
-        # zero the parameter gradients
-        optimizer.zero_grad()
-
-        # forward + backward + optimize
-        outputs = net(inputs.float())
-        loss = criterionTraining(outputs, labels.to(device))
-        loss.backward()
-#        print("---")
-#        print("loss = ", loss.item())
-        optimizer.step()
-        #########################################################
-        
-
-
-    return net
-
-
-def TestValidation(net, featureType, valSet, valLabels, criterionTraining, optimizer, batchSize, device, verbose = True):
-    
-    if verbose:
-        print("TestValidation running...")
-        
-    lossSum = 0
-    
-    countBatch = 0
-        
-    with torch.no_grad():    
-
-        for batchIdx, batchStartIdx in enumerate(range(0, valSet.shape[0], batchSize)):
-            
-            countBatch += 1
-
-            
-            batchIdxs = [i for i in range(batchStartIdx, batchStartIdx + batchSize)]
-            
-            # the final batch will probably be too large so this 
-            # ensures it doesn't go over the size of the 
-            if max(batchIdxs) >= valSet.shape[0]:
-                batchIdxs = [i for i in range(batchStartIdx,valSet.shape[0])]
-            
-            thisBatch = []
-            
-            for thisIndex in batchIdxs:
-                thisBatch.append(torch.from_numpy(valSet[thisIndex]))
-            
-            #print("thisBatch[0].shape = ", thisBatch[0].shape)
-            
-            thisBatchStack = torch.stack(thisBatch)
-            
-            #print("thisBatchStack.shape = ", thisBatchStack.shape)
-            
-            thisLabels = torch.Tensor([valLabels[thisIndex] for thisIndex in batchIdxs])
-            
-            inputs, labels = thisBatchStack.to(device), thisLabels.to(device)
-            
-            # note, here we cannot rely on the batch size because maybe
-            # the data set is not divisible by the batch size, then when the
-            # last batch is run there will be issues, making it depend on the 
-            # size of the current input is a much better solution
-            labels = labels.view(thisBatchStack.shape[0],1)
-            
-            if featureType == "tfidf":
-                #tfidf comes out in a weird shape.... no se por que
-                inputs = inputs.view(thisBatchStack.shape[0],thisBatchStack.shape[2])
-            
-            #########################################################
-            #################### do batch update ####################
-            #########################################################
-    
-            # zero the parameter gradients
-            optimizer.zero_grad()
-    
-            # forward + backward + optimize
-            outputs = net(inputs.float())
-            loss = criterionTraining(outputs, labels.to(device))
-            #########################################################
-
-            lossSum += loss.item()
-            
-    meanLoss = lossSum/countBatch
-            
-    return meanLoss
-    
-    
-def TestWithTestSet(net, featureType, testSet, testLabels, criterionTraining, optimizer, batchSize, device, verbose = True):
-    
-    if verbose:
-        print("TestWithTestSet running, good luck...")
-        
-    torchSigmoid = nn.Sigmoid()
-
-    totalCorrect = 0
-    totalImages = 0
-        
-    with torch.no_grad():    
-
-        for batchIdx,batchStartIdx  in enumerate(range(0, testSet.shape[0], batchSize)):
-            
-                      
-            
-            batchIdxs = [i for i in range(batchStartIdx, batchStartIdx + batchSize)]
-            
-            # the final batch will probably be too large so this 
-            # ensures it doesn't go over the size of the 
-            if max(batchIdxs) >= testSet.shape[0]:
-                batchIdxs = [i for i in range(batchStartIdx,testSet.shape[0])]
-            
-            thisBatch = []
-            
-            for thisIndex in batchIdxs:
-                thisBatch.append(torch.from_numpy(testSet[thisIndex]))
-            
-            #print("thisBatch[0].shape = ", thisBatch[0].shape)
-
-            thisBatchStack = torch.stack(thisBatch)
-    
-            
-            #print("thisBatchStack.shape = ", thisBatchStack.shape)
-            
-            thisLabels = torch.Tensor([testLabels[thisIndex] for thisIndex in batchIdxs])
-            
-            inputs, labels = thisBatchStack.to(device), thisLabels.to(device)
-            
-#                # note, here we cannot rely on the batch size because maybe
-#                # the data set is not divisible by the batch size, then when the
-#                # last batch is run there will be issues, making it depend on the 
-#                # size of the current input is a much better solution
-#            try:
-            labels = labels.view(thisBatchStack.shape[0],1)
-#            except:
-#                hippo = 1
-            
-            if featureType == "tfidf":
-                #tfidf comes out in a weird shape.... no se por que
-                inputs = inputs.view(thisBatchStack.shape[0],thisBatchStack.shape[2])
-
-            #print("time_1")
-            outputs = net(inputs.float())
-    
-            outputs = outputs.view(outputs.size(0))
-            
-            outputsSigmoid = torchSigmoid(outputs)
-            
-            # threshold the output at 0.5 (since we are using sigmoid)
-            predicted = outputsSigmoid > 0.5
-            
-            predicted = predicted.long()
-            
-            predicted = predicted.squeeze()
-            
-            labels = labels.squeeze()
-            
-            compareOutput = predicted == labels.long()
-            
-            #count the number of 1's in the comparison vecotr
-            try:
-                nCorrect = sum(compareOutput)
-                
-                            #conver that to a number 
-                nCorrect = nCorrect.item()
-                
-                totalImages += outputs.size(0)
-                
-                totalCorrect += nCorrect
-            except:
-                print("----------------------------------------")
-                print("there is some weird thing here")
-                print("it doesn't like it if there is only one")
-                print("item in the batch")
-                print("----------------------------------------")
-            
-
-            #print("time_2")
-
-
-    modelAccuracy = totalCorrect / totalImages * 100
-            
-    return modelAccuracy
-
-
-def Main(featureType,
-         trainSet, 
-         trainLabels, 
-         valSet, 
-         valLabels, 
-         testSet, 
-         testLabels, 
-         batchSize = 64, 
-         dataDirectory = "../Data_Featurised/", 
-         modelWeightsDirectory = "../ML_Models/", 
-         modelFileName = "tempModelName",
-         device = device, 
-         verbose = True):
-    
-    
-    dirname = os.path.dirname(__file__)
-     
-    modelFileName = modelWeightsDirectory + modelFileName + "_%s" % featureType
-    
-    fullFilenameTrain = os.path.join(dirname, modelFileName)
-    
-    bestValLoss = np.inf
-    
-    net = Net(trainSet.shape[1])
-    
-    criterionTraining, optimizer, scheduler = SetNetParams(net)
-    
-    accuracy = TestWithTestSet(net, featureType, valSet, valLabels, criterionTraining, optimizer, batchSize, device, verbose = verbose)
-    
-    print("starting accuracy = ", accuracy)
-    
-    
-    for thisEpoch in range(50):
-        
-        if verbose:
-            print("this epoch = ",str(thisEpoch))
-        
-        net = Train(net, featureType, trainSet, trainLabels, criterionTraining, optimizer, batchSize, device, verbose = verbose)
-        
-        valLoss = TestValidation(net, featureType, valSet, valLabels, criterionTraining, optimizer, batchSize, device, verbose = verbose)
-        
-        #accuracy = TestWithTestSet(net, featureType, valSet, valLabels, criterionTraining, optimizer, batchSize, device, verbose = verbose)
-        
-        
-        if verbose:
-            print("validation loss = ",valLoss)
-            #print("validation acc = ", accuracy)
-        
-        
-        if valLoss > bestValLoss:
-            #  so the model has got worse
-            
-            # load previous model and test
-            
-            net = Net(trainSet.shape[1])
-            
-            if verbose:
-                print("loading best model")
-            
-            net.load_state_dict(torch.load(fullFilenameTrain))
-            
-            accuracy = TestWithTestSet(net, featureType, testSet, testLabels, criterionTraining, optimizer, batchSize, device, verbose = verbose)
-            
-            if verbose:
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("Test Set Accuracy = ", accuracy)
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-
-            
-            return accuracy
-        else:
-            #pass
-            bestValLoss = valLoss
-            
-            print("saving model...")
-            torch.save(net.state_dict(), fullFilenameTrain)
-    
-    accuracy = TestWithTestSet(net, featureType, testSet, testLabels, criterionTraining, optimizer, batchSize, device, verbose = verbose)
-    
-    if verbose:
-        print("reached epoch limit")
-        print("Test Set Accuracy = ", accuracy)
-    
-    return accuracy  
 
 if __name__ == "__main__":
     
-    # pretty much only used for 
+    # NOTE - the gensim feature DF has unsupervised data with label -1
+    # the tfidf has only negative or positive
+    
+    # options for featurisation: 'gensim or tfidf'
+    featureType = 'gensim'
+    #featureType = 'tfidf'
     
     thisVerbose = True
-    standarise = True
-    # get feature data
     
-    featureType = 'tfidf'
+    if thisVerbose:
+        print("using model %s" % featureType)
+    
+    standarise = True
+    
+    # useful when testing not to have to rerun 
+    # the same slow preprocessing since it only needs to be done
+    # once then can be stored
+    
+    # first check if featureised data is available
     
     dirname = os.path.dirname(__file__)
      
@@ -492,17 +130,88 @@ if __name__ == "__main__":
         labelsTest = pickle.load(file)
         file.close()
         
-    
-    
-    
         
+    else: # we have no feature data we need to create it
+        if thisVerbose:
+            print("feature not data found")
+            print("checking for data objects")
+    
+        ##########################################################
+        ################ import training data ####################
+        ##########################################################
+        
+        # check if we already have training data in variables
+        # useful when building code 
+            
+        # see if training data has been previously pickled
+        
+        fileNameTrain = '../Data/training_data.pkl'
+        fullFilenameTrain = os.path.join(dirname, fileNameTrain)
+        
+        fileNameTest = '../Data/testing_data.pkl' 
+        fullFilenameTest = os.path.join(dirname, fileNameTest)
+        
+        fileNameUnsupervised = '../Data/unsupervised_data.pkl' 
+        fullFilenameUnsupervised = os.path.join(dirname, fileNameUnsupervised)
+        
+        if (os.path.isfile(fullFilenameTrain)) and (os.path.isfile(fullFilenameTest)):
+            # if so then open pickle 
+            
+            if thisVerbose:
+                print("data objects found unpickling")
+
+            file = open(fullFilenameTrain, 'rb')
+            trainDF = pickle.load(file)
+            file.close()
+            
+            file = open(fullFilenameTest, 'rb')
+            testDF = pickle.load(file)
+            file.close()
+            
+            if os.path.isfile(fullFilenameUnsupervised):
+                file = open(fullFilenameUnsupervised, 'rb')
+                unsupervisedDF = pickle.load(file)
+                file.close()
+            else:
+                unsupervisedDF = None
+                
+            
+        else:
+            if thisVerbose:
+                print("data objects not found")
+                print("building data objects")
+            # if not, build the data and pickle for later use
+            trainDF, testDF, unsupervisedDF = Data_Import_And_Feature.ImportData(pickleObject = True, verbose = thisVerbose)
+            
+                
+        ##########################################################
+        
+    
+        ##########################################################
+        ################   featurise  data   ####################
+            ##########################################################            
+        if thisVerbose:
+            print("building feature objects")
+        
+        featureDataTrain, featureDataTest, labelsTrain, labelsTest = Data_Import_And_Feature.FeaturiseData(featureType,
+                                                                                       trainDF, 
+                                                                                       testDF,
+                                                                                       unsupervisedDF,
+                                                                                       pickleObject = True,
+                                                                                       verbose = thisVerbose)
+
+        ##########################################################
+        
+    
+    
     ##########################################################
     ##############  build  cross valdation   #################
     ##########################################################            
    
-    # code this
-    
     if standarise:
+        
+        if thisVerbose:
+            print("standardising features")
         
         thisMean = np.mean(featureDataTrain)
         thisStd = np.std(featureDataTrain)
@@ -510,7 +219,6 @@ if __name__ == "__main__":
         featureDataTrain = (featureDataTrain - thisMean) / thisStd
         
         featureDataTest = (featureDataTest - thisMean) / thisStd
-        
     
     if thisVerbose:
         print("building cross validation sets")
@@ -530,52 +238,20 @@ if __name__ == "__main__":
         labelTrainList.append(labelTrain)
         labelValList.append(labelVal)
        
-        
-    accuracy = Main(featureType, dataTrainList[0], labelTrainList[0], dataValList[0], labelValList[0], featureDataTest, labelsTest)
-    
-#    
-#    inputSize = 100
-#    
-#    accuray = main(dataTrainList[0],labelTrainList[0],dataValList[0],labelValList[0])
-#    
-#    netObj.BuildNet(inputSize)
-#    
-#    netObj.SetNetParams()
-#    
-#    maxEpochs = 3
-#    
-#        #keep track of previous validation accuracy
-#    # initialise to inf so we ensure the first 
-#    # test will be less
-#    bestVaildationLoss = maths.inf
-#    
-#    for thisEpoch in range(maxEpochs):
-#        
-#        
-#        netObj.Train()
-#
-#        validationLoss = netObj.TestValidation()
-#        #if the model has acieved better than the best accuracy then 
-#        # save model
-#        if (validationLoss > bestVaildationLoss):
-#            # if we havent improved on the model then stop at this epoch and 
-#            accuracy = netObj.TestWithTestSet(featureDataTest, labelsTest)
-#            print("accuracy = ",accuracy)
-#            break
-#        else:
-#            bestVaildationLoss = validationLoss
 
+    ##########################################################
     
     
+    ##########################################################
+    ##################    train models     ###################     
+    ##########################################################            
+   
+
+    for cvIndex, ele in enumerate(dataTrainList):
+        modelFileName = "Model_Fold_%s" % str(cvIndex)
+        accuracy = Text_Classifier_Neural_Network.Main(featureType, dataTrainList[cvIndex], labelTrainList[cvIndex], dataValList[cvIndex], labelValList[cvIndex], featureDataTest, labelsTest, modelFileName = modelFileName)
     
+    ##########################################################
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
     

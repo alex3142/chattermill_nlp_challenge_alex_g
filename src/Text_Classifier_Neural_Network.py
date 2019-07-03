@@ -406,6 +406,16 @@ def Main(featureType,
         
         
         if valLoss > bestValLoss:
+            #  so the model has got worse
+            
+            # load previous model and test
+            
+            net = Net(trainSet.shape[1])
+            
+            if verbose:
+                print("loading best model")
+            
+            net.load_state_dict(torch.load(fullFilenameTrain))
             
             accuracy = TestWithTestSet(net, featureType, testSet, testLabels, criterionTraining, optimizer, batchSize, device, verbose = verbose)
             
@@ -413,14 +423,15 @@ def Main(featureType,
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                 print("Test Set Accuracy = ", accuracy)
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                print("saving model...")
-            
-            torch.save(net.state_dict(), fullFilenameTrain)
+
             
             return accuracy
         else:
             #pass
             bestValLoss = valLoss
+            
+            print("saving model...")
+            torch.save(net.state_dict(), fullFilenameTrain)
     
     accuracy = TestWithTestSet(net, featureType, testSet, testLabels, criterionTraining, optimizer, batchSize, device, verbose = verbose)
     
